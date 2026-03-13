@@ -5,7 +5,7 @@ from models import Scene
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 # Swap to "llama-3.1-70b-versatile" on demo day for best quality
-MODEL = "llama-3.1-8b-instant"
+MODEL = "llama-3.1-70b-versatile"
 
 SYSTEM_PROMPT = """
 You are a comic book storyboard artist. Given a book chapter, extract 4 to 6 key scenes.
