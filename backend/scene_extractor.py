@@ -1,11 +1,15 @@
+
 import os, json
 from groq import Groq
+from dotenv import load_dotenv
 from models import Scene
+
+load_dotenv()  # ← this loads your .env file
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 # Swap to "llama-3.1-70b-versatile" on demo day for best quality
-MODEL = "llama-3.1-70b-versatile"
+MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """
 You are a comic book storyboard artist. Given a book chapter, extract 4 to 6 key scenes.
