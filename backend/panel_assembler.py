@@ -21,9 +21,12 @@ def get_font(size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def load_image_from_url(url: str) -> Image.Image:
-    resp = requests.get(url, timeout=20)
-    img  = Image.open(io.BytesIO(resp.content)).convert("RGB")
+def load_image(path_or_url: str) -> Image.Image:
+    if path_or_url.startswith("http"):
+        resp = requests.get(path_or_url, timeout=20)
+        img  = Image.open(io.BytesIO(resp.content)).convert("RGB")
+    else:
+        img = Image.open(path_or_url).convert("RGB")
     return img.resize((PANEL_W, PANEL_H), Image.LANCZOS)
 
 
@@ -62,7 +65,7 @@ def draw_speech_bubble(draw: ImageDraw, text: str, x: int, y: int,
 
 
 def create_panel(scene: dict, image_url: str) -> Image.Image:
-    panel = load_image_from_url(image_url)
+    panel = load_image(image_url)
     draw  = ImageDraw.Draw(panel)
 
     # caption bar

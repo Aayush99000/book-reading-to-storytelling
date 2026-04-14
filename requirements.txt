@@ -1,29 +1,33 @@
-# ── Python version: 3.12.13 ───────────────────────────────────────────────────
-# All packages below are verified compatible with Python 3.12.x
+# ── Python version: 3.10+ (HPC compatible) ────────────────────────────────────
 # Install with: pip install -r requirements.txt
 
 # ── Web Framework ─────────────────────────────────────────────────────────────
-fastapi==0.115.12            # Python 3.12 supported — latest stable
-uvicorn[standard]==0.34.0    # ASGI server for FastAPI
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
 
 # ── Data Validation ───────────────────────────────────────────────────────────
-pydantic==2.11.1             # Python 3.12 supported — used by FastAPI
+pydantic==2.11.1
 
 # ── Groq LLM (scene extraction) ───────────────────────────────────────────────
-groq==1.1.0                  # Official Groq SDK — Python 3.10+ (includes 3.12)
+groq==1.1.0
 
-# ── Replicate (image generation) ──────────────────────────────────────────────
-replicate==1.0.7             # Official Replicate SDK — Python 3.8+ (includes 3.12)
+# ── Diffusers stack (image generation — runs locally on GPU) ──────────────────
+torch>=2.2.0                 # install separately via conda for CUDA support
+diffusers>=0.27.0            # HuggingFace diffusers — SDXL pipeline
+transformers>=4.38.0         # required by diffusers
+accelerate>=0.27.0           # model loading + device management
+safetensors>=0.4.2           # load .safetensors model weights
+huggingface-hub>=0.22.0      # model downloads from HuggingFace
 
 # ── Image Processing ──────────────────────────────────────────────────────────
-Pillow==11.1.0               # Python 3.12 supported — panel assembly + speech bubbles
+Pillow==11.1.0
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
-requests==2.32.3             # Python 3.12 supported — fetching image URLs
-httpx==0.28.1                # Async HTTP — used internally by Groq SDK
+requests==2.32.3
+httpx==0.28.1
 
 # ── Environment & Config ──────────────────────────────────────────────────────
-python-dotenv==1.1.0         # Load .env file — Python 3.12 supported
+python-dotenv==1.1.0
 
 # ── Async Support ─────────────────────────────────────────────────────────────
-anyio==4.9.0                 # Async backend — required by FastAPI + httpx
+anyio==4.9.0
