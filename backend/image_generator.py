@@ -1,22 +1,27 @@
 import os, asyncio, uuid
 import torch
+from PIL import Image
 from diffusers import StableDiffusionXLPipeline
 from dotenv import load_dotenv
 
+from scene_extractor import build_image_prompt
+
 load_dotenv()
 
-# Animagine XL 3.1 — anime-tuned SDXL checkpoint on HuggingFace
-MODEL_ID = "cagliostrolab/animagine-xl-3.1"
+# ── Model config ──────────────────────────────────────────────────────────────
+MODEL_ID       = "cagliostrolab/animagine-xl-3.1"
+IP_ADAPTER_REPO    = "h94/IP-Adapter"
+IP_ADAPTER_SUBFOLDER = "sdxl_models"
+IP_ADAPTER_WEIGHT  = "ip-adapter_sdxl.bin"
 
-# Optional: manga panel style LoRA (SDXL-compatible HuggingFace repo ID)
-# Example: "Linaqruf/manga-pencil-xl"
-# Leave empty to run Animagine without LoRA
+# How strongly the reference image influences the output (0.0 = off, 1.0 = max)
+# 0.6 keeps the character recognisable while still following the scene prompt
+IP_ADAPTER_SCALE = 0.6
+
 MANGA_LORA_ID = os.getenv("MANGA_LORA_ID", "")
 LORA_SCALE    = 0.75
 
-# Animagine XL quality booster tags
 QUALITY_TAGS = "masterpiece, best quality, very aesthetic, absurdres"
-
 NEGATIVE_PROMPT = (
     "nsfw, lowres, bad anatomy, bad hands, text, error, missing fingers, "
     "extra digit, fewer digits, cropped, worst quality, low quality, "
@@ -24,9 +29,44 @@ NEGATIVE_PROMPT = (
     "blurry, artist name, 3d render, realistic, photographic"
 )
 
-# Singleton pipeline — loaded once, reused for all generations
-_pipe = None
 
+# ── Character reference store ─────────────────────────────────────────────────
+
+class CharacterReferenceStore:
+    """
+    Stores the first generated panel for each character as their visual reference.
+    IP-Adapter uses this reference to keep the character consistent across panels.
+    """
+
+    def __init__(self):
+        self._refs: dict[str, Image.Image] = {}
+
+    def has(self, name: str) -> bool:
+        return name.lower() in self._refs
+
+    def get(self, name: str) -> Image.Image:
+        return self._refs[name.lower()]
+
+    def set(self, name: str, image: Image.Image):
+        self._refs[name.lower()] = image
+
+    def get_first_available(self, names: list[str]) -> Image.Image | None:
+        """Return the reference image for the first character in the list that has one."""
+        for name in names:
+            if self.has(name):
+                return self.get(name)
+        return None
+
+    def reset(self):
+        self._refs.clear()
+
+
+# Module-level singletons — loaded once, reused across all panels in a job
+_pipe: StableDiffusionXLPipeline | None = None
+_character_store = CharacterReferenceStore()
+
+
+# ── Pipeline loader ───────────────────────────────────────────────────────────
 
 def _load_pipeline() -> StableDiffusionXLPipeline:
     global _pipe
@@ -35,8 +75,7 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype  = torch.float16 if device == "cuda" else torch.float32
-
-    print(f"[image_generator] Loading Animagine XL 3.1 on {device} ({dtype})...")
+    print(f"[image_generator] Loading Animagine XL 3.1 on {device}...")
 
     _pipe = StableDiffusionXLPipeline.from_pretrained(
         MODEL_ID,
@@ -44,12 +83,20 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
         use_safetensors=True,
     ).to(device)
 
+    # Optional manga style LoRA
     if MANGA_LORA_ID:
         print(f"[image_generator] Loading manga LoRA: {MANGA_LORA_ID}")
         _pipe.load_lora_weights(MANGA_LORA_ID)
         _pipe.fuse_lora(lora_scale=LORA_SCALE)
 
-    # Memory optimisations for GPU
+    # IP-Adapter for character consistency
+    print("[image_generator] Loading IP-Adapter (SDXL)...")
+    _pipe.load_ip_adapter(
+        IP_ADAPTER_REPO,
+        subfolder=IP_ADAPTER_SUBFOLDER,
+        weight_name=IP_ADAPTER_WEIGHT,
+    )
+
     if device == "cuda":
         _pipe.enable_attention_slicing()
 
@@ -57,34 +104,73 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
     return _pipe
 
 
-def _generate_sync(prompt: str) -> str:
-    """Synchronous generation — runs in a thread pool."""
-    pipe = _load_pipeline()
+# ── Core generation ───────────────────────────────────────────────────────────
 
-    result = pipe(
-        prompt=f"{QUALITY_TAGS}, {prompt}",
-        negative_prompt=NEGATIVE_PROMPT,
-        width=768,
-        height=512,
-        num_inference_steps=30,
-        guidance_scale=7.0,
-    )
+def _generate_sync(prompt: str, character_names: list[str]) -> str:
+    pipe = _load_pipeline()
+    full_prompt = f"{QUALITY_TAGS}, {prompt}"
+
+    reference = _character_store.get_first_available(character_names)
+
+    if reference is not None:
+        # Character already seen — condition on their reference image
+        pipe.set_ip_adapter_scale(IP_ADAPTER_SCALE)
+        result = pipe(
+            prompt=full_prompt,
+            negative_prompt=NEGATIVE_PROMPT,
+            ip_adapter_image=reference,
+            width=768,
+            height=512,
+            num_inference_steps=30,
+            guidance_scale=7.0,
+        )
+    else:
+        # First appearance — generate freely, result becomes the reference
+        pipe.set_ip_adapter_scale(0.0)
+        result = pipe(
+            prompt=full_prompt,
+            negative_prompt=NEGATIVE_PROMPT,
+            width=768,
+            height=512,
+            num_inference_steps=30,
+            guidance_scale=7.0,
+        )
+
+    generated_image = result.images[0]
+
+    # Register first-seen characters using this panel as their reference
+    for name in character_names:
+        if not _character_store.has(name):
+            _character_store.set(name, generated_image)
+            print(f"[image_generator] Registered reference for: {name}")
 
     os.makedirs("output/images", exist_ok=True)
     img_path = f"output/images/{uuid.uuid4().hex[:8]}.png"
-    result.images[0].save(img_path)
+    generated_image.save(img_path)
     return img_path
 
 
-async def generate_image(prompt: str) -> str:
-    """Async wrapper — offloads blocking diffusers call to thread pool."""
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def reset_character_store():
+    """Call at the start of each new chapter/job to clear character references."""
+    _character_store.reset()
+    print("[image_generator] Character reference store cleared.")
+
+
+async def generate_image(prompt: str, character_names: list[str]) -> str:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _generate_sync, prompt)
+    return await loop.run_in_executor(None, _generate_sync, prompt, character_names)
 
 
-async def generate_all_images(prompts: list[str]) -> list[str]:
-    """Generate panels sequentially — single GPU handles one at a time."""
+async def generate_all_images(scenes: list[dict], style: str = "manga") -> list[str]:
+    """
+    Generate one panel image per scene, maintaining character consistency
+    across panels via IP-Adapter reference injection.
+    """
     results = []
-    for prompt in prompts:
-        results.append(await generate_image(prompt))
+    for scene in scenes:
+        prompt          = build_image_prompt(scene, style)
+        character_names = [c["name"] for c in scene.get("characters", [])]
+        results.append(await generate_image(prompt, character_names))
     return results

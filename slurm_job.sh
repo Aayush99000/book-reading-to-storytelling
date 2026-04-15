@@ -13,7 +13,8 @@ module load anaconda3/2022.05
 module load cuda/11.8
 
 # ── Activate environment ───────────────────────────────────────────────────────
-source activate book2comic
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate book2comic
 
 # ── Set HuggingFace cache to scratch (avoids home directory quota) ─────────────
 export HF_HOME=/scratch/$USER/hf_cache

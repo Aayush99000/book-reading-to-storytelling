@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from models import ChapterRequest, JobStatus
-from scene_extractor import extract_scenes, build_image_prompt
-from image_generator import generate_all_images
+from scene_extractor import extract_scenes
+from image_generator import generate_all_images, reset_character_store
 from panel_assembler import assemble_comic
 
 app = FastAPI(title="Book2Comic API", version="1.0.0")
@@ -58,10 +58,10 @@ async def run_pipeline(job_id: str, chapter_text: str, style: str):
         scenes = extract_scenes(chapter_text)
         jobs[job_id].update({"scenes": scenes, "progress": 30})
 
-        # ── Stage 2: image generation via Replicate (parallel) ───────────
-        prompts    = [build_image_prompt(s, style) for s in scenes]
+        # ── Stage 2: image generation via diffusers + IP-Adapter ────────
+        reset_character_store()          # clear refs from any previous job
         jobs[job_id]["progress"] = 40
-        image_urls = await generate_all_images(prompts)
+        image_urls = await generate_all_images(scenes, style)
         jobs[job_id]["progress"] = 80
 
         # ── Stage 3: panel assembly via Pillow ───────────────────────────
