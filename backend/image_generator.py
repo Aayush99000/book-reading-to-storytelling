@@ -116,23 +116,29 @@ def _generate_sync(prompt: str, character_names: list[str]) -> str:
     full_prompt = f"{QUALITY_TAGS}, {prompt}"
 
     reference = _character_store.get_first_available(character_names)
+    device    = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype     = torch.float16 if device == "cuda" else torch.float32
 
     if reference is not None:
-        # Character already seen — condition on their reference image
         pipe.set_ip_adapter_scale(IP_ADAPTER_SCALE)
         ip_image = reference
         print(f"[image_generator] Using reference for: {character_names}", flush=True)
     else:
-        # First appearance — dummy image + scale=0.0 so it has zero influence
         pipe.set_ip_adapter_scale(0.0)
         ip_image = Image.new("RGB", (224, 224), color=(128, 128, 128))
         print(f"[image_generator] First appearance, generating freely: {character_names}", flush=True)
 
-    # IP-Adapter must always receive ip_adapter_image once loaded
+    # Pre-encode image embeds manually — avoids tuple/shape bug in diffusers 0.37.x
+    clip_image = pipe.feature_extractor(images=ip_image, return_tensors="pt").pixel_values
+    clip_image = clip_image.to(device=device, dtype=dtype)
+    image_embeds      = pipe.image_encoder(clip_image).image_embeds.unsqueeze(1)
+    neg_image_embeds  = torch.zeros_like(image_embeds)
+    ip_adapter_embeds = [torch.cat([neg_image_embeds, image_embeds])]
+
     result = pipe(
         prompt=full_prompt,
         negative_prompt=NEGATIVE_PROMPT,
-        ip_adapter_image=ip_image,
+        ip_adapter_image_embeds=ip_adapter_embeds,
         width=768,
         height=512,
         num_inference_steps=30,
