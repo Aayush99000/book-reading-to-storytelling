@@ -107,6 +107,12 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
     # encoder_hidden_states that IP-Adapter produces, causing an AttributeError.
     # The L40S has 46 GB VRAM, so slicing isn't needed anyway.
 
+    # SDXL VAE is numerically unstable in fp16 and produces yellow/black
+    # corrupted outputs.  Upcast it to fp32 — the UNet still runs in fp16.
+    if device == "cuda":
+        _pipe.vae.to(torch.float32)
+        print("[image_generator] VAE upcast to float32 for stable decoding.", flush=True)
+
     print("[image_generator] Step 4/4 — Pipeline ready.", flush=True)
     return _pipe
 
