@@ -102,8 +102,10 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
     )
     print("[image_generator] Step 3/4 — done.", flush=True)
 
-    if device == "cuda":
-        _pipe.enable_attention_slicing()
+    # NOTE: do NOT call enable_attention_slicing() — it replaces IP-Adapter's
+    # attention processors with SlicedAttnProcessor, which can't handle the tuple
+    # encoder_hidden_states that IP-Adapter produces, causing an AttributeError.
+    # The L40S has 46 GB VRAM, so slicing isn't needed anyway.
 
     print("[image_generator] Step 4/4 — Pipeline ready.", flush=True)
     return _pipe
