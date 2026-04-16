@@ -75,32 +75,37 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype  = torch.float16 if device == "cuda" else torch.float32
-    print(f"[image_generator] Loading Animagine XL 3.1 on {device}...")
+    print(f"[image_generator] Device: {device} | dtype: {dtype}", flush=True)
+    print(f"[image_generator] Step 1/4 — from_pretrained Animagine XL 3.1...", flush=True)
 
     _pipe = StableDiffusionXLPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
         use_safetensors=True,
-    ).to(device)
+    )
+    print(f"[image_generator] Step 2/4 — moving pipeline to {device}...", flush=True)
+    _pipe = _pipe.to(device)
+    print(f"[image_generator] Step 2/4 — done.", flush=True)
 
     # Optional manga style LoRA
     if MANGA_LORA_ID:
-        print(f"[image_generator] Loading manga LoRA: {MANGA_LORA_ID}")
+        print(f"[image_generator] Loading manga LoRA: {MANGA_LORA_ID}", flush=True)
         _pipe.load_lora_weights(MANGA_LORA_ID)
         _pipe.fuse_lora(lora_scale=LORA_SCALE)
 
     # IP-Adapter for character consistency
-    print("[image_generator] Loading IP-Adapter (SDXL)...")
+    print("[image_generator] Step 3/4 — loading IP-Adapter (SDXL)...", flush=True)
     _pipe.load_ip_adapter(
         IP_ADAPTER_REPO,
         subfolder=IP_ADAPTER_SUBFOLDER,
         weight_name=IP_ADAPTER_WEIGHT,
     )
+    print("[image_generator] Step 3/4 — done.", flush=True)
 
     if device == "cuda":
         _pipe.enable_attention_slicing()
 
-    print("[image_generator] Pipeline ready.")
+    print("[image_generator] Step 4/4 — Pipeline ready.", flush=True)
     return _pipe
 
 
