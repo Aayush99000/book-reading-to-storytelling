@@ -127,7 +127,6 @@ def _generate_sync(prompt: str, character_names: list[str]) -> str:
 
     reference = _character_store.get_first_available(character_names)
     device    = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype     = torch.float16 if device == "cuda" else torch.float32
 
     if reference is not None:
         pipe.set_ip_adapter_scale(IP_ADAPTER_SCALE)
@@ -138,17 +137,12 @@ def _generate_sync(prompt: str, character_names: list[str]) -> str:
         ip_image = Image.new("RGB", (224, 224), color=(128, 128, 128))
         print(f"[image_generator] First appearance, generating freely: {character_names}", flush=True)
 
-    # Pre-encode image embeds manually — avoids tuple/shape bug in diffusers 0.37.x
-    clip_image = pipe.feature_extractor(images=ip_image, return_tensors="pt").pixel_values
-    clip_image = clip_image.to(device=device, dtype=dtype)
-    image_embeds      = pipe.image_encoder(clip_image).image_embeds.unsqueeze(1)
-    neg_image_embeds  = torch.zeros_like(image_embeds)
-    ip_adapter_embeds = [torch.cat([neg_image_embeds, image_embeds])]
-
+    # Pass image directly — IPAdapterAttnProcessor2_0 (set by load_ip_adapter) handles
+    # the tuple encoder_hidden_states correctly, so pre-encoding is not needed.
     result = pipe(
         prompt=full_prompt,
         negative_prompt=NEGATIVE_PROMPT,
-        ip_adapter_image_embeds=ip_adapter_embeds,
+        ip_adapter_image=ip_image,
         width=768,
         height=512,
         num_inference_steps=30,
