@@ -120,26 +120,24 @@ def _generate_sync(prompt: str, character_names: list[str]) -> str:
     if reference is not None:
         # Character already seen — condition on their reference image
         pipe.set_ip_adapter_scale(IP_ADAPTER_SCALE)
-        result = pipe(
-            prompt=full_prompt,
-            negative_prompt=NEGATIVE_PROMPT,
-            ip_adapter_image=reference,
-            width=768,
-            height=512,
-            num_inference_steps=30,
-            guidance_scale=7.0,
-        )
+        ip_image = reference
+        print(f"[image_generator] Using reference for: {character_names}", flush=True)
     else:
-        # First appearance — generate freely, result becomes the reference
+        # First appearance — dummy image + scale=0.0 so it has zero influence
         pipe.set_ip_adapter_scale(0.0)
-        result = pipe(
-            prompt=full_prompt,
-            negative_prompt=NEGATIVE_PROMPT,
-            width=768,
-            height=512,
-            num_inference_steps=30,
-            guidance_scale=7.0,
-        )
+        ip_image = Image.new("RGB", (224, 224), color=(128, 128, 128))
+        print(f"[image_generator] First appearance, generating freely: {character_names}", flush=True)
+
+    # IP-Adapter must always receive ip_adapter_image once loaded
+    result = pipe(
+        prompt=full_prompt,
+        negative_prompt=NEGATIVE_PROMPT,
+        ip_adapter_image=ip_image,
+        width=768,
+        height=512,
+        num_inference_steps=30,
+        guidance_scale=7.0,
+    )
 
     generated_image = result.images[0]
 
