@@ -74,7 +74,9 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
         return _pipe
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype  = torch.float16 if device == "cuda" else torch.float32
+    # bfloat16 has the same dynamic range as float32 (8 exponent bits) so it
+    # doesn't overflow on newer GPUs (Ada Lovelace / L40S) the way float16 does.
+    dtype  = torch.bfloat16 if device == "cuda" else torch.float32
     print(f"[image_generator] Device: {device} | dtype: {dtype}", flush=True)
     print(f"[image_generator] Step 1/4 — from_pretrained Animagine XL 3.1...", flush=True)
 
