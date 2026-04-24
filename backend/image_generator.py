@@ -2,6 +2,7 @@ import os, asyncio, uuid
 import torch
 from PIL import Image
 from diffusers import StableDiffusionXLPipeline
+from diffusers.models.attention_processor import AttnProcessor
 from dotenv import load_dotenv
 
 from scene_extractor import build_image_prompt
@@ -95,6 +96,14 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
         _pipe.load_lora_weights(MANGA_LORA_ID)
         _pipe.fuse_lora(lora_scale=LORA_SCALE)
 
+    # Disable Flash Attention (SDPA) BEFORE loading IP-Adapter.
+    # SDPA produces diagonal stripe corruption on L40S + diffusers 0.37.x + torch 2.7.x.
+    # Setting AttnProcessor() first means load_ip_adapter() will pick up the non-SDPA
+    # variant (IPAdapterAttnProcessor instead of IPAdapterAttnProcessor2_0),
+    # keeping character consistency intact while avoiding the corruption.
+    _pipe.unet.set_attn_processor(AttnProcessor())
+    print("[image_generator] Flash Attention disabled — using vanilla AttnProcessor.", flush=True)
+
     # IP-Adapter for character consistency
     print("[image_generator] Step 3/4 — loading IP-Adapter (SDXL)...", flush=True)
     _pipe.load_ip_adapter(
@@ -103,11 +112,6 @@ def _load_pipeline() -> StableDiffusionXLPipeline:
         weight_name=IP_ADAPTER_WEIGHT,
     )
     print("[image_generator] Step 3/4 — done.", flush=True)
-
-    # NOTE: do NOT call enable_attention_slicing() — it replaces IP-Adapter's
-    # attention processors with SlicedAttnProcessor, which can't handle the tuple
-    # encoder_hidden_states that IP-Adapter produces, causing an AttributeError.
-    # The L40S has 46 GB VRAM, so slicing isn't needed anyway.
 
     # SDXL VAE is numerically unstable in fp16 and produces corrupted outputs.
     # Setting force_upcast=True makes the pipeline cast both the VAE weights
